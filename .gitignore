@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+
+# secrets / credentials
+.env
+client_secret.json
+token.json
+
+# runtime data
+downloads/
+ytvault.db
+tools/

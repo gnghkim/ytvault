@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YTVault</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f0f0f; color: #e0e0e0; }
+
+    header { background: #1a1a2e; padding: 16px 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #2a2a4a; }
+    header h1 { font-size: 1.4rem; color: #7c6af7; }
+    header .subtitle { font-size: 0.85rem; color: #888; }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+    .stats { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+    .stat-card { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 8px; padding: 12px 20px; min-width: 110px; text-align: center; }
+    .stat-card .num { font-size: 1.8rem; font-weight: 700; }
+    .stat-card .label { font-size: 0.75rem; color: #888; margin-top: 2px; }
+    .stat-card.done .num { color: #4caf50; }
+    .stat-card.downloading .num { color: #2196f3; }
+    .stat-card.pending .num { color: #ff9800; }
+    .stat-card.failed .num { color: #f44336; }
+    .stat-card.total .num { color: #7c6af7; }
+
+    table { width: 100%; border-collapse: collapse; background: #1a1a2e; border-radius: 10px; overflow: hidden; border: 1px solid #2a2a4a; }
+    thead th { background: #13132a; padding: 12px 14px; text-align: left; font-size: 0.8rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+    tbody tr { border-top: 1px solid #2a2a4a; transition: background 0.15s; }
+    tbody tr:hover { background: #20203a; }
+    td { padding: 12px 14px; font-size: 0.88rem; vertical-align: middle; }
+
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .badge-pending   { background: #3a2e00; color: #ffc107; }
+    .badge-downloading { background: #002040; color: #42a5f5; }
+    .badge-uploading   { background: #1a0040; color: #ab47bc; }
+    .badge-notifying   { background: #002030; color: #26c6da; }
+    .badge-done        { background: #003320; color: #66bb6a; }
+    .badge-failed      { background: #3a0000; color: #ef5350; }
+
+    .url-cell { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aaa; font-size: 0.8rem; }
+    .title-cell { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .link-btn         { display: inline-block; padding: 4px 10px; background: #7c6af7; color: #fff; border-radius: 6px; text-decoration: none; font-size: 0.78rem; }
+    .link-btn:hover   { background: #9580ff; }
+    .link-btn.notion  { background: #2e2e2e; border: 1px solid #555; }
+    .link-btn.notion:hover { background: #444; }
+
+    .error-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ef5350; font-size: 0.78rem; }
+    .empty { text-align: center; padding: 48px; color: #555; }
+
+    .refresh-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .refresh-bar span { font-size: 0.8rem; color: #666; }
+    .refresh-btn { padding: 6px 14px; background: #2a2a4a; border: 1px solid #3a3a6a; color: #ccc; border-radius: 6px; cursor: pointer; font-size: 0.82rem; }
+    .refresh-btn:hover { background: #3a3a6a; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>YTVault</h1>
+      <div class="subtitle">YouTube → Google Drive + Notion 저장 현황</div>
+    </div>
+  </header>
+
+  <div class="container">
+    {% set total = jobs | length %}
+    {% set done = jobs | selectattr("status", "equalto", "done") | list | length %}
+    {% set pending = jobs | selectattr("status", "equalto", "pending") | list | length %}
+    {% set downloading = jobs | selectattr("status", "in", ["downloading", "uploading", "notifying"]) | list | length %}
+    {% set failed = jobs | selectattr("status", "equalto", "failed") | list | length %}
+
+    <div class="stats">
+      <div class="stat-card total"><div class="num">{{ total }}</div><div class="label">전체</div></div>
+      <div class="stat-card done"><div class="num">{{ done }}</div><div class="label">완료</div></div>
+      <div class="stat-card downloading"><div class="num">{{ downloading }}</div><div class="label">진행 중</div></div>
+      <div class="stat-card pending"><div class="num">{{ pending }}</div><div class="label">대기</div></div>
+      <div class="stat-card failed"><div class="num">{{ failed }}</div><div class="label">실패</div></div>
+    </div>
+
+    <div class="refresh-bar">
+      <span id="last-update">마지막 갱신: 방금</span>
+      <button class="refresh-btn" onclick="loadJobs()">새로고침</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>제목</th>
+          <th>URL</th>
+          <th>상태</th>
+          <th>Drive</th>
+          <th>Notion</th>
+          <th>오류</th>
+          <th>요청 시각</th>
+          <th>갱신 시각</th>
+        </tr>
+      </thead>
+      <tbody id="job-tbody">
+        {% if jobs %}
+          {% for job in jobs %}
+          <tr>
+            <td>{{ job.id }}</td>
+            <td class="title-cell" title="{{ job.title or '' }}">{{ job.title or '-' }}</td>
+            <td class="url-cell"><a href="{{ job.url }}" target="_blank" style="color:#aaa">{{ job.url }}</a></td>
+            <td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td>
+            <td>{% if job.gdrive_link %}<a class="link-btn" href="{{ job.gdrive_link }}" target="_blank">Drive</a>{% else %}-{% endif %}</td>
+            <td>{% if job.notion_url %}<a class="link-btn notion" href="{{ job.notion_url }}" target="_blank">Notion</a>{% else %}-{% endif %}</td>
+            <td class="error-cell" title="{{ job.error_msg or '' }}">{{ job.error_msg or '' }}</td>
+            <td>{{ job.created_fmt }}</td>
+            <td>{{ job.updated_fmt }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="9" class="empty">아직 작업이 없습니다. Telegram으로 YouTube 링크를 보내보세요.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    async function loadJobs() {
+      const res = await fetch('/api/jobs');
+      const jobs = await res.json();
+      const tbody = document.getElementById('job-tbody');
+
+      if (!jobs.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty">아직 작업이 없습니다.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = jobs.map(j => `
+        <tr>
+          <td>${j.id}</td>
+          <td class="title-cell" title="${j.title || ''}">${j.title || '-'}</td>
+          <td class="url-cell"><a href="${j.url}" target="_blank" style="color:#aaa">${j.url}</a></td>
+          <td><span class="badge badge-${j.status}">${j.status}</span></td>
+          <td>${j.gdrive_link ? `<a class="link-btn" href="${j.gdrive_link}" target="_blank">Drive</a>` : '-'}</td>
+          <td>${j.notion_url ? `<a class="link-btn notion" href="${j.notion_url}" target="_blank">Notion</a>` : '-'}</td>
+          <td class="error-cell" title="${j.error_msg || ''}">${j.error_msg || ''}</td>
+          <td>${j.created_fmt}</td>
+          <td>${j.updated_fmt}</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('last-update').textContent = '마지막 갱신: ' + new Date().toLocaleTimeString('ko-KR');
+    }
+
+    // 30초마다 자동 갱신
+    setInterval(loadJobs, 30000);
+  </script>
+</body>
+</html>
