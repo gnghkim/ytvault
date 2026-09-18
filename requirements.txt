@@ -1,5 +1,5 @@
 python-telegram-bot==21.6
-yt-dlp>=2024.1.1
+yt-dlp[default,curl-cffi]>=2026.8.19
 google-api-python-client==2.149.0
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.1

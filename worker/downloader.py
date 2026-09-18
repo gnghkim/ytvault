@@ -6,6 +6,7 @@ import logging
 import threading
 from datetime import datetime
 import yt_dlp
+from log_redaction import redact_secrets
 from db.models import (
     get_pending_jobs,
     update_job,
@@ -21,6 +22,7 @@ from ai.summarizer import summarize_youtube
 from config import DOWNLOAD_DIR, NOTION_DATABASE_ID, GEMINI_API_KEY
 
 _SUBTITLE_LANGS = ["ko", "en"]
+_DOWNLOAD_ATTEMPTS = 3
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,28 @@ def _ffmpeg_dir() -> str | None:
 
 def _has_ffmpeg() -> bool:
     d = _ffmpeg_dir()
-    return d is not None and d != ""
+    return d != ""
+
+
+def _js_runtimes() -> dict:
+    """Enable an installed JS runtime for YouTube challenge solving."""
+    for runtime, executable in (("deno", "deno"), ("node", "node"), ("quickjs", "qjs")):
+        path = shutil.which(executable)
+        if path:
+            return {runtime: {"path": path}}
+    return {}
+
+
+def _youtube_opts() -> dict:
+    opts = {
+        "quiet": True,
+        "noprogress": True,
+        "logger": logger,
+        "no_warnings": False,
+    }
+    if js_runtimes := _js_runtimes():
+        opts["js_runtimes"] = js_runtimes
+    return opts
 
 
 def _video_format() -> str:
@@ -66,40 +89,47 @@ def _parse_vtt(path: str) -> str:
 
 
 def _fetch_subtitles(url: str, base_no_ext: str) -> str:
-    """ko/en 자막을 한 번의 요청으로 시도 (수동 자막 우선, 없으면 자동 생성 자막)."""
-    try:
-        ydl_opts = {
-            "writesubtitles": True,
-            "writeautomaticsub": True,
-            "subtitleslangs": _SUBTITLE_LANGS,
-            "subtitlesformat": "vtt",
-            "skip_download": True,
-            "outtmpl": base_no_ext,
-            "quiet": True,
-            "no_warnings": True,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-    except Exception as e:
-        logger.warning(f"Subtitle download failed (non-fatal): {e}")
-
-    # base_no_ext에 포함된 [id] 등 glob 특수문자를 이스케이프해야 파일을 제대로 찾는다.
+    """Try Korean first, then English only when no usable Korean text exists."""
     escaped_base = glob.escape(base_no_ext)
     text = ""
     for lang in _SUBTITLE_LANGS:
-        vtt_files = glob.glob(f"{escaped_base}.{lang}*.vtt")
-        if vtt_files:
-            text = _parse_vtt(vtt_files[0])
-            logger.info(f"Subtitles downloaded: lang={lang}")
+        ydl_opts = {
+            **_youtube_opts(),
+            "writesubtitles": True,
+            "writeautomaticsub": True,
+            "subtitleslangs": [lang],
+            "subtitlesformat": "vtt",
+            "skip_download": True,
+            "outtmpl": base_no_ext,
+        }
+        rate_limited = False
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        except Exception as e:
+            rate_limited = "HTTP Error 429" in str(e)
+            logger.warning("Subtitle download failed (non-fatal, lang=%s): %s", lang, redact_secrets(e))
+
+        vtt_path = f"{base_no_ext}.{lang}.vtt"
+        if os.path.isfile(vtt_path):
+            try:
+                text = _parse_vtt(vtt_path)
+            except (OSError, UnicodeError) as e:
+                logger.warning("Subtitle read failed (non-fatal): %s", redact_secrets(e))
+        if text:
+            logger.info("Subtitles downloaded: lang=%s", lang)
+            break
+        if rate_limited:
+            logger.warning("Subtitle rate limit reached; continuing with video description.")
             break
 
-    for f in glob.glob(f"{escaped_base}.*.vtt"):
+    for path in glob.glob(f"{escaped_base}.*.vtt"):
         try:
-            os.remove(f)
+            os.remove(path)
         except OSError:
             pass
-
     return text
+
 
 
 def _download(job: dict) -> tuple[str, str, str, str]:
@@ -117,24 +147,39 @@ def _download(job: dict) -> tuple[str, str, str, str]:
                 final_path["path"] = fp
 
     ydl_opts = {
+        **_youtube_opts(),
         "outtmpl": output_tmpl,
         "format": _video_format(),
         "postprocessor_hooks": [postprocessor_hook],
-        "quiet": True,
-        "no_warnings": True,
     }
     ffdir = _ffmpeg_dir()
-    if ffdir:
+    if ffdir != "":
         ydl_opts["merge_output_format"] = "mp4"
+    if ffdir:
         ydl_opts["ffmpeg_location"] = ffdir
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(job["url"], download=True)
-        title = info.get("title", f"video_{job_id}")
-        description = info.get("description", "")
+    for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(job["url"], download=True)
+                prepared_path = ydl.prepare_filename(info)
+            break
+        except yt_dlp.utils.DownloadError as exc:
+            is_transient_403 = "HTTP Error 403" in str(exc)
+            if not is_transient_403 or attempt == _DOWNLOAD_ATTEMPTS:
+                raise
+            delay = 2 ** (attempt - 1)
+            logger.warning(
+                f"[job {job_id}] YouTube returned 403; "
+                f"retrying extraction in {delay}s ({attempt}/{_DOWNLOAD_ATTEMPTS})"
+            )
+            time.sleep(delay)
+
+    title = info.get("title", f"video_{job_id}")
+    description = info.get("description", "")
 
     # postprocessor_hook → 없으면 prepare_filename 기준으로 탐색
-    path = final_path.get("path") or ydl.prepare_filename(info)
+    path = final_path.get("path") or prepared_path
     if not os.path.exists(path):
         base = os.path.splitext(path)[0]
         for ext in ("mp4", "mkv", "webm", "m4a"):
@@ -222,10 +267,11 @@ def _process_job(job: dict, notify_callback=None):
             notify_callback(job["chat_id"], msg)
 
     except Exception as e:
-        logger.error(f"[job {job_id}] failed: {e}")
-        update_job(job_id, status=STATUS_FAILED, error_msg=str(e))
+        error_msg = redact_secrets(e)
+        logger.error(f"[job {job_id}] failed: {error_msg}")
+        update_job(job_id, status=STATUS_FAILED, error_msg=error_msg)
         if notify_callback:
-            notify_callback(job["chat_id"], f"❌ 실패 (job {job_id}): {e}")
+            notify_callback(job["chat_id"], f"❌ 실패 (job {job_id}): {error_msg}")
 
 
 def run_worker(notify_callback=None, poll_interval: int = 5):

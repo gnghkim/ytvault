@@ -1,16 +1,14 @@
 import logging
 import threading
 import uvicorn
+from log_redaction import configure_safe_logging
 from db.models import init_db
 from worker.downloader import run_worker
 from bot.telegram_bot import run_bot, send_message_sync
 from web.app import app as web_app
 from config import WEB_HOST, WEB_PORT
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+configure_safe_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -32,7 +30,6 @@ if __name__ == "__main__":
 
     worker_thread = threading.Thread(target=start_worker, daemon=True, name="worker")
     worker_thread.start()
-    logger.info("Worker started.")
 
     # Telegram bot runs in main thread (blocking)
     run_bot()

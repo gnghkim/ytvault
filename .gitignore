@@ -4,8 +4,13 @@ __pycache__/
 
 # secrets / credentials
 .env
+.env.*
+!.env.example
 client_secret.json
+credentials.json
 token.json
+token.pickle
+*.log
 
 # runtime data
 downloads/

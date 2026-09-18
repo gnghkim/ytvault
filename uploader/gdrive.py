@@ -51,7 +51,7 @@ def _get_service():
         with open(token_path, "w") as f:
             f.write(creds.to_json())
 
-    _service = build("drive", "v3", credentials=creds)
+    _service = build("drive", "v3", credentials=creds, cache_discovery=False)
     return _service
 
 
