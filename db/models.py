@@ -184,6 +184,22 @@ def get_job_by_url(url: str) -> dict | None:
         return dict(row) if row else None
 
 
+def retry_failed_job(job_id: int) -> bool:
+    """실패한 job만 대기열로 되돌린다. 이미 다른 상태면(중복 클릭 등) 아무것도 하지 않고 False.
+
+    고른 해상도(max_height)는 그대로 두어 다시 묻지 않는다.
+    """
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE jobs SET status = ?, error_msg = NULL, file_path = NULL, gdrive_link = NULL,"
+            " notion_url = NULL, stage = NULL, progress = NULL, stage_detail = NULL, updated_at = ?"
+            " WHERE id = ? AND status = ?",
+            (STATUS_PENDING, time.time(), job_id, STATUS_FAILED),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+
+
 def reset_job_to_pending(job_id: int) -> None:
     """기존 job을 재처리 대기 상태로 초기화."""
     update_job(

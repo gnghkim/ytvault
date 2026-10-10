@@ -1,11 +1,12 @@
+import logging
 import math
 import os
 import time
-from fastapi import Depends, FastAPI, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from db.models import count_jobs, count_jobs_by_status, get_job, search_jobs
+from db.models import count_jobs, count_jobs_by_status, get_job, retry_failed_job, search_jobs
 from log_redaction import redact_secrets
 from web.auth import require_auth
 
@@ -18,11 +19,15 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
+logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 
 PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 MAX_QUERY_LENGTH = 100
+# 상태를 바꾸는 요청에 붙여야 하는 헤더. 브라우저는 Basic 인증 정보를 다른 사이트가 보낸 폼 POST에도
+# 자동으로 붙이지만, 다른 사이트는 이 헤더를 붙일 수 없다(붙이려면 CORS 사전 요청이 필요하고 허용하지 않는다).
+CSRF_HEADER = "X-YTVault-Request"
 
 
 def _fmt_time(ts: float | None) -> str:
@@ -82,6 +87,19 @@ async def api_jobs(
 async def api_job(job_id: int):
     job = get_job(job_id)
     if not job:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Job not found")
     return _prepare_job(job)
+
+
+@app.post("/api/jobs/{job_id}/retry")
+async def api_retry_job(job_id: int, csrf: str | None = Header(None, alias=CSRF_HEADER)):
+    """실패한 작업을 다시 대기열에 넣는다. 워커가 몇 초 안에 가져간다."""
+    if csrf != "1":
+        raise HTTPException(status_code=403, detail="Missing request header")
+    if not retry_failed_job(job_id):
+        job = get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=409, detail=f"Only failed jobs can be retried (status: {job['status']})")
+    logger.info(f"[job {job_id}] retry requested from the web UI")
+    return _prepare_job(get_job(job_id))

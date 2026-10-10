@@ -73,6 +73,9 @@
     .link-btn.notion  { background: #2e2e2e; border: 1px solid #555; }
     .link-btn.notion:hover { background: #444; }
 
+    .retry-btn { margin-left: 6px; padding: 2px 9px; background: #2a2a4a; border: 1px solid #5a4a8a; color: #c9bfff; border-radius: 10px; cursor: pointer; font-size: 0.74rem; white-space: nowrap; }
+    .retry-btn:hover:not(:disabled) { background: #3a3a6a; }
+    .retry-btn:disabled { opacity: 0.5; cursor: default; }
     .error-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ef5350; font-size: 0.78rem; }
     .time-cell { white-space: nowrap; font-size: 0.78rem; color: #aaa; line-height: 1.35; }
     .time-cell .clock { color: #777; }
@@ -184,6 +187,10 @@
 
     function renderProgress(j) {
       let html = `<span class="badge badge-${esc(j.status)}">${esc(STATUS_LABELS[j.status] || j.status)}</span>`;
+      if (j.status === 'failed') {
+        html += `<button type="button" class="retry-btn" data-retry="${esc(j.id)}" title="이 작업을 다시 대기열에 넣습니다">↻ 재시도</button>`;
+        return html;
+      }
       if (j.status === 'awaiting_choice') {
         const left = j.choice_remaining != null ? ` · ${minutesLeft(j.choice_remaining)}` : '';
         html += `<div class="choice-hint">텔레그램에서 해상도를 골라 주세요${left}<br>(고르지 않으면 ${DEFAULT_RESOLUTION})</div>`;
@@ -351,6 +358,22 @@
     searchInput.addEventListener('input', () => {
       clearTimeout(debounce);
       debounce = setTimeout(() => search(searchInput.value), 400);
+    });
+    document.getElementById('job-tbody').addEventListener('click', async e => {
+      const target = e.target.closest('button[data-retry]');
+      if (!target || target.disabled) return;
+      target.disabled = true;
+      target.textContent = '요청 중…';
+      try {
+        const res = await fetch(`/api/jobs/${target.dataset.retry}/retry`, {
+          method: 'POST', headers: { 'X-YTVault-Request': '1' },
+        });
+        if (!res.ok && res.status !== 409) throw new Error((await res.json()).detail || res.status);
+        // 409 = 그사이 이미 재시도됨. 어느 쪽이든 목록을 다시 불러와 현재 상태를 보여 준다
+      } catch (err) {
+        alert(`재시도 요청 실패: ${err.message}`);
+      }
+      loadJobs();
     });
     document.getElementById('pagination').addEventListener('click', e => {
       const target = e.target.closest('button[data-page]');
