@@ -12,7 +12,7 @@
     header h1 { font-size: 1.4rem; color: #7c6af7; }
     header .subtitle { font-size: 0.85rem; color: #888; }
 
-    .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+    .container { max-width: 1280px; margin: 0 auto; padding: 24px 16px; }
 
     .stats { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
     .stat-card { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 8px; padding: 12px 20px; min-width: 110px; text-align: center; }
@@ -26,12 +26,25 @@
     .stat-card.total .num { color: #7c6af7; }
 
     .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #2a2a4a; }
-    table { width: 100%; border-collapse: collapse; background: #1a1a2e; }
+    /* 열 너비를 고정하고 남는 폭은 제목 열이 쓴다. 제목 열이 너무 좁아질 화면에서만 가로 스크롤 */
+    table { width: 100%; min-width: 1000px; table-layout: fixed; border-collapse: collapse; background: #1a1a2e; }
+    .col-id { width: 52px; }
+    .col-progress { width: 230px; }
+    .col-res { width: 84px; }
+    .col-drive { width: 74px; }
+    .col-notion { width: 84px; }
+    .col-error { width: 150px; }
+    .col-created, .col-updated { width: 100px; }
+    @media (max-width: 1200px) {
+      /* 좁은 화면에서는 갱신 시각 열을 숨겨 제목 열 폭을 확보한다 */
+      .col-updated { display: none; }
+      table { min-width: 880px; }
+    }
     thead th { background: #13132a; padding: 12px 14px; text-align: left; font-size: 0.8rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
     tbody tr { border-top: 1px solid #2a2a4a; transition: background 0.15s; }
     tbody tr:hover { background: #20203a; }
     tbody tr.active { background: #161630; }
-    td { padding: 12px 14px; font-size: 0.88rem; vertical-align: middle; }
+    td { padding: 10px 12px; font-size: 0.88rem; vertical-align: middle; overflow: hidden; }
 
     .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
     .badge-pending         { background: #3a2e00; color: #ffc107; }
@@ -42,7 +55,6 @@
     .badge-done            { background: #003320; color: #66bb6a; }
     .badge-failed          { background: #3a0000; color: #ef5350; }
 
-    .progress-cell { min-width: 230px; }
     .stage { margin-top: 6px; font-size: 0.8rem; color: #ccc; }
     .stage .step { color: #888; margin-right: 4px; }
     .bar { height: 6px; background: #2a2a4a; border-radius: 3px; margin-top: 5px; overflow: hidden; }
@@ -52,7 +64,7 @@
     .detail { margin-top: 4px; font-size: 0.75rem; color: #888; }
     .choice-hint { margin-top: 6px; font-size: 0.78rem; color: #ffab91; }
 
-    .title-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .title-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .title-cell a { color: #e0e0e0; text-decoration: none; }
     .title-cell a:hover { text-decoration: underline; }
     .res-cell { white-space: nowrap; color: #bbb; font-size: 0.82rem; }
@@ -61,8 +73,9 @@
     .link-btn.notion  { background: #2e2e2e; border: 1px solid #555; }
     .link-btn.notion:hover { background: #444; }
 
-    .error-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ef5350; font-size: 0.78rem; }
-    .time-cell { white-space: nowrap; font-size: 0.8rem; color: #aaa; }
+    .error-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ef5350; font-size: 0.78rem; }
+    .time-cell { white-space: nowrap; font-size: 0.78rem; color: #aaa; line-height: 1.35; }
+    .time-cell .clock { color: #777; }
     .empty { text-align: center; padding: 48px; color: #555; }
 
     .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -112,15 +125,15 @@
       <table>
         <thead>
           <tr>
-            <th>#</th>
-            <th>제목</th>
-            <th>진행 상태</th>
-            <th>해상도</th>
-            <th>Drive</th>
-            <th>Notion</th>
-            <th>오류</th>
-            <th>요청 시각</th>
-            <th>갱신 시각</th>
+            <th class="col-id">#</th>
+            <th class="col-title">제목</th>
+            <th class="col-progress">진행 상태</th>
+            <th class="col-res">해상도</th>
+            <th class="col-drive">Drive</th>
+            <th class="col-notion">Notion</th>
+            <th class="col-error">오류</th>
+            <th class="col-created">요청 시각</th>
+            <th class="col-updated">갱신 시각</th>
           </tr>
         </thead>
         <tbody id="job-tbody"></tbody>
@@ -159,6 +172,11 @@
       if (height === null || height === undefined) return '-';
       if (height === 0) return '최고 화질';
       return { 2160: '4K', 4320: '8K' }[height] || `${height}p`;
+    }
+    function fmtTime(value) {
+      // "2026-10-11 00:14:18" → 날짜와 시각을 두 줄로 (열 폭을 줄이려고)
+      const [date, time] = String(value ?? '').split(' ');
+      return time ? `${esc(date)}<br><span class="clock">${esc(time)}</span>` : esc(value);
     }
     function minutesLeft(seconds) {
       return seconds >= 60 ? `${Math.ceil(seconds / 60)}분 남음` : `${seconds}초 남음`;
@@ -264,8 +282,8 @@
           <td>${j.gdrive_link ? `<a class="link-btn" href="${safeUrl(j.gdrive_link)}" target="_blank" rel="noopener">Drive</a>` : '-'}</td>
           <td>${j.notion_url ? `<a class="link-btn notion" href="${safeUrl(j.notion_url)}" target="_blank" rel="noopener">Notion</a>` : '-'}</td>
           <td class="error-cell" title="${esc(j.error_msg)}">${esc(j.error_msg)}</td>
-          <td class="time-cell">${esc(j.created_fmt)}</td>
-          <td class="time-cell">${esc(j.updated_fmt)}</td>
+          <td class="time-cell">${fmtTime(j.created_fmt)}</td>
+          <td class="time-cell col-updated">${fmtTime(j.updated_fmt)}</td>
         </tr>
       `).join('');
     }
