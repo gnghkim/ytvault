@@ -1,3 +1,4 @@
+import os
 import time
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
@@ -16,7 +17,7 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
-templates = Jinja2Templates(directory="web/templates")
+templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 
 
 def _fmt_time(ts: float | None) -> str:

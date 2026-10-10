@@ -61,6 +61,17 @@ def update_job(job_id: int, **kwargs):
         conn.commit()
 
 
+def requeue_interrupted_jobs() -> int:
+    """재시작 등으로 처리 도중 끊긴 job을 다시 대기 상태로 돌린다. 되돌린 개수를 반환."""
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE jobs SET status = ?, error_msg = NULL, updated_at = ? WHERE status IN (?, ?, ?)",
+            (STATUS_PENDING, time.time(), STATUS_DOWNLOADING, STATUS_UPLOADING, STATUS_NOTIFYING),
+        )
+        conn.commit()
+        return cur.rowcount
+
+
 def get_pending_jobs() -> list[dict]:
     with _conn() as conn:
         rows = conn.execute(

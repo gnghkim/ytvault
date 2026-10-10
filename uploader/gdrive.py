@@ -1,4 +1,6 @@
 import os
+import ssl
+import sys
 import time
 import logging
 from datetime import datetime
@@ -8,7 +10,7 @@ from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
-from config import GDRIVE_FOLDER_ID
+from config import GDRIVE_FOLDER_ID, project_path
 
 _ARCHIVE_FOLDER = "YoutubeVault Archive"
 
@@ -21,11 +23,11 @@ _service = None
 
 
 def _get_token_path() -> str:
-    return os.environ.get("GDRIVE_TOKEN_PATH") or "token.json"
+    return project_path(os.environ.get("GDRIVE_TOKEN_PATH") or "token.json")
 
 
 def _get_client_secret_path() -> str:
-    return (
+    return project_path(
         os.environ.get("GDRIVE_CLIENT_SECRET_PATH")
         or os.environ.get("GDRIVE_CREDENTIALS_PATH")
         or "client_secret.json"
@@ -46,10 +48,18 @@ def _get_service():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
+            # 브라우저 인증은 사람이 터미널 앞에 있을 때만 가능하다. systemd 같은
+            # 서비스 환경에서 run_local_server를 부르면 응답 없이 영원히 기다린다.
+            if not sys.stdin or not sys.stdin.isatty():
+                raise RuntimeError(
+                    f"Google Drive 인증 토큰이 없거나 갱신할 수 없습니다 ({token_path}). "
+                    "터미널에서 직접 실행해 인증하거나 다른 PC에서 만든 token.json을 복사하세요."
+                )
             flow = InstalledAppFlow.from_client_secrets_file(_get_client_secret_path(), _SCOPES)
             creds = flow.run_local_server(port=0)
         with open(token_path, "w") as f:
             f.write(creds.to_json())
+        os.chmod(token_path, 0o600)
 
     _service = build("drive", "v3", credentials=creds, cache_discovery=False)
     return _service
@@ -63,10 +73,16 @@ def _reset_service():
 def _is_retryable(error: Exception) -> bool:
     if isinstance(error, HttpError):
         return getattr(error.resp, "status", None) in _RETRYABLE_HTTP_STATUSES
+    # 연결 끊김/리셋/Broken pipe(ConnectionError), 타임아웃, TLS 오류는 OS와 무관하게 예외 타입으로 잡는다.
+    if isinstance(error, (ConnectionError, TimeoutError, ssl.SSLError)):
+        return True
     msg = str(error)
     if any(t in msg for t in _RETRYABLE_WINERRORS):
         return True
-    return any(t in msg.lower() for t in ["connection aborted", "connection reset", "timed out", "tls"])
+    return any(
+        t in msg.lower()
+        for t in ["connection abort", "connection reset", "broken pipe", "timed out", "tls"]
+    )
 
 
 def _execute(request_factory, retries: int = 3, base_delay: float = 1.0):

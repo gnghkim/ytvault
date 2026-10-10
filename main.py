@@ -2,7 +2,7 @@ import logging
 import threading
 import uvicorn
 from log_redaction import configure_safe_logging
-from db.models import init_db
+from db.models import init_db, requeue_interrupted_jobs
 from worker.downloader import run_worker
 from bot.telegram_bot import run_bot, send_message_sync
 from web.app import app as web_app
@@ -23,6 +23,8 @@ def start_worker():
 if __name__ == "__main__":
     init_db()
     logger.info("DB initialized.")
+    if requeued := requeue_interrupted_jobs():
+        logger.info(f"Requeued {requeued} job(s) interrupted by the last shutdown.")
 
     web_thread = threading.Thread(target=start_web, daemon=True, name="web")
     web_thread.start()

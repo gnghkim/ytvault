@@ -135,7 +135,9 @@ def _fetch_subtitles(url: str, base_no_ext: str) -> str:
 def _download(job: dict) -> tuple[str, str, str, str]:
     """Download video with yt-dlp. Returns (file_path, title, subtitles, description)."""
     job_id = job["id"]
-    output_tmpl = os.path.join(DOWNLOAD_DIR, f"%(title)s [%(id)s].%(ext)s")
+    # 리눅스 파일명 한도는 255바이트(한글 1자 = 3바이트)라 제목을 바이트 기준으로 자른다.
+    # 150B + " [id]" + ".f399.mp4.part" / ".ko.vtt" 를 붙여도 한도 안에 들어간다.
+    output_tmpl = os.path.join(DOWNLOAD_DIR, "%(title).150B [%(id)s].%(ext)s")
 
     final_path = {}
 
@@ -214,8 +216,21 @@ def _build_info_md(title: str, url: str, ai_result) -> str:
     return "\n".join(lines)
 
 
+def _discard_download(file_path: str | None) -> None:
+    """실패한 작업의 영상 파일을 지운다. 재시도하면 처음부터 다시 받는다."""
+    if not file_path:
+        return
+    try:
+        os.remove(file_path)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        logger.warning("Could not remove %s: %s", file_path, e)
+
+
 def _process_job(job: dict, notify_callback=None):
     job_id = job["id"]
+    file_path = None
     try:
         update_job(job_id, status=STATUS_DOWNLOADING)
         logger.info(f"[job {job_id}] downloading: {job['url']}")
@@ -270,6 +285,7 @@ def _process_job(job: dict, notify_callback=None):
         error_msg = redact_secrets(e)
         logger.error(f"[job {job_id}] failed: {error_msg}")
         update_job(job_id, status=STATUS_FAILED, error_msg=error_msg)
+        _discard_download(file_path)
         if notify_callback:
             notify_callback(job["chat_id"], f"❌ 실패 (job {job_id}): {error_msg}")
 
