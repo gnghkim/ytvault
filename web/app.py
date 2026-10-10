@@ -1,10 +1,11 @@
+import math
 import os
 import time
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from db.models import get_all_jobs, get_job
+from db.models import count_jobs, count_jobs_by_status, get_job, search_jobs
 from log_redaction import redact_secrets
 from web.auth import require_auth
 
@@ -18,6 +19,10 @@ app = FastAPI(
     openapi_url=None,
 )
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
+
+PAGE_SIZE = 20
+MAX_PAGE_SIZE = 100
+MAX_QUERY_LENGTH = 100
 
 
 def _fmt_time(ts: float | None) -> str:
@@ -40,15 +45,37 @@ def _prepare_job(job: dict) -> dict:
     return job
 
 
+def _job_page(page: int, size: int, query: str) -> dict:
+    """검색어에 맞는 작업의 한 페이지. 범위를 벗어난 페이지 번호는 가장 가까운 페이지로 맞춘다."""
+    size = min(max(size, 1), MAX_PAGE_SIZE)
+    query = query.strip()
+    total = count_jobs(query)
+    pages = max(1, math.ceil(total / size))
+    page = min(max(page, 1), pages)
+    items = search_jobs(query, limit=size, offset=(page - 1) * size)
+    return {
+        "items": [_prepare_job(job) for job in items],
+        "total": total,
+        "page": page,
+        "pages": pages,
+        "size": size,
+        "query": query,
+        "counts": count_jobs_by_status(),  # 통계 카드는 검색과 무관하게 전체 기준
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    jobs = [_prepare_job(job) for job in get_all_jobs()]
-    return templates.TemplateResponse("index.html", {"request": request, "jobs": jobs})
+async def index(request: Request, page: int = 1, q: str = Query("", max_length=MAX_QUERY_LENGTH)):
+    return templates.TemplateResponse(request, "index.html", {"initial": _job_page(page, PAGE_SIZE, q)})
 
 
 @app.get("/api/jobs")
-async def api_jobs():
-    return [_prepare_job(job) for job in get_all_jobs()]
+async def api_jobs(
+    page: int = 1,
+    size: int = PAGE_SIZE,
+    q: str = Query("", max_length=MAX_QUERY_LENGTH),
+):
+    return _job_page(page, size, q)
 
 
 @app.get("/api/jobs/{job_id}")

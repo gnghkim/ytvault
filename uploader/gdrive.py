@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 _SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 _RETRYABLE_WINERRORS = ("[WinError 10053]", "[WinError 10054]", "[WinError 10060]")
 _RETRYABLE_HTTP_STATUSES = {429, 500, 502, 503, 504}
+# 업로드 조각 크기 (기본값 100MB). 조각마다 진행률이 갱신되고, 조각 하나만큼 메모리를 쓴다.
+_UPLOAD_CHUNK_SIZE = 16 * 1024 * 1024
 _service = None
 
 
@@ -155,7 +157,7 @@ def _upload_single_file(service, file_path: str, filename: str, parent_id: str, 
     def upload():
         request = service.files().create(
             body={"name": filename, "parents": [parent_id]},
-            media_body=MediaFileUpload(file_path, resumable=True),
+            media_body=MediaFileUpload(file_path, resumable=True, chunksize=_UPLOAD_CHUNK_SIZE),
             fields="id",
         )
         response = None

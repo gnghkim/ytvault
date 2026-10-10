@@ -31,7 +31,9 @@ class WebAuthTests(unittest.TestCase):
             patch.object(config, "WEB_USERNAME", "ytvault"),
             patch.object(config, "WEB_PASSWORD", "s3cret-비번"),
             patch.object(auth, "FAILURE_DELAY_SECONDS", 0),
-            patch.object(web_app, "get_all_jobs", return_value=[JOB]),
+            patch.object(web_app, "search_jobs", return_value=[JOB]),
+            patch.object(web_app, "count_jobs", return_value=1),
+            patch.object(web_app, "count_jobs_by_status", return_value={"done": 1}),
             patch.object(web_app, "get_job", side_effect=lambda job_id: JOB if job_id == 1 else None),
         ]
         for p in patches:
@@ -48,7 +50,7 @@ class WebAuthTests(unittest.TestCase):
     def test_correct_credentials_open_the_ui(self):
         headers = basic("ytvault", "s3cret-비번")
         self.assertEqual(self.client.get("/", headers=headers).status_code, 200)
-        jobs = self.client.get("/api/jobs", headers=headers).json()
+        jobs = self.client.get("/api/jobs", headers=headers).json()["items"]
         self.assertEqual(jobs[0]["title"], "video")
         self.assertNotIn("chat_id", jobs[0])
         self.assertNotIn("file_path", jobs[0])

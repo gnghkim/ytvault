@@ -130,12 +130,42 @@ def get_pending_jobs() -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def get_all_jobs(limit: int = 100) -> list[dict]:
+def _search_clause(query: str) -> tuple[str, list]:
+    """제목/URL 부분 일치 검색. "67" 이나 "#67" 처럼 숫자면 작업 번호도 찾는다."""
+    query = query.strip()
+    if not query:
+        return "", []
+    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    like = f"%{escaped}%"
+    clause = "title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\'"
+    params: list = [like, like]
+    number = query.removeprefix("#")
+    if number.isdigit():
+        clause += " OR id = ?"
+        params.append(int(number))
+    return f"WHERE ({clause})", params
+
+
+def count_jobs(query: str = "") -> int:
+    where, params = _search_clause(query)
+    with _conn() as conn:
+        return conn.execute(f"SELECT COUNT(*) FROM jobs {where}", params).fetchone()[0]
+
+
+def search_jobs(query: str = "", limit: int = 20, offset: int = 0) -> list[dict]:
+    """최근 요청 순으로 검색 결과의 한 페이지를 반환."""
+    where, params = _search_clause(query)
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
+            f"SELECT * FROM jobs {where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+            params + [limit, offset],
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def count_jobs_by_status() -> dict[str, int]:
+    with _conn() as conn:
+        return dict(conn.execute("SELECT status, COUNT(*) FROM jobs GROUP BY status").fetchall())
 
 
 def get_job(job_id: int) -> dict | None:
