@@ -32,6 +32,9 @@ def _prepare_job(job: dict) -> dict:
     job.pop("file_path", None)
     job["created_fmt"] = _fmt_time(job.get("created_at"))
     job["updated_fmt"] = _fmt_time(job.get("updated_at"))
+    # 브라우저 시계와 무관하게 남은 시간을 서버 기준으로 계산해 준다
+    deadline = job.pop("choice_deadline", None)
+    job["choice_remaining"] = max(0, int(deadline - time.time())) if deadline else None
     if job.get("error_msg"):
         job["error_msg"] = redact_secrets(job["error_msg"])
     return job

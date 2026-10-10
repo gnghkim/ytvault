@@ -4,11 +4,25 @@ from contextlib import contextmanager
 from config import DB_PATH
 
 STATUS_PENDING = "pending"
+STATUS_AWAITING_CHOICE = "awaiting_choice"
 STATUS_DOWNLOADING = "downloading"
 STATUS_UPLOADING = "uploading"
 STATUS_NOTIFYING = "notifying"
 STATUS_DONE = "done"
 STATUS_FAILED = "failed"
+
+# 나중에 추가된 컬럼. 기존 DB에는 init_db()가 자동으로 붙인다.
+#   max_height: 다운로드 해상도 상한(짧은 변 기준). NULL = 아직 안 정함, 0 = 제한 없음
+#   choice_deadline: 해상도 선택 마감 시각. 지나면 기본 해상도로 진행
+#   stage / progress / stage_detail: 웹에 보여 줄 세부 진행 단계, 진행률(%), 속도 등 부가 정보
+_ADDED_COLUMNS = (
+    ("max_height", "INTEGER"),
+    ("choice_deadline", "REAL"),
+    ("stage", "TEXT"),
+    ("progress", "REAL"),
+    ("stage_detail", "TEXT"),
+)
+_CLEAR_STAGE = {"stage": None, "progress": None, "stage_detail": None}
 
 
 def init_db():
@@ -28,6 +42,10 @@ def init_db():
                 updated_at REAL NOT NULL
             )
         """)
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+        for name, sql_type in _ADDED_COLUMNS:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE jobs ADD COLUMN {name} {sql_type}")
         conn.commit()
 
 
@@ -65,11 +83,42 @@ def requeue_interrupted_jobs() -> int:
     """재시작 등으로 처리 도중 끊긴 job을 다시 대기 상태로 돌린다. 되돌린 개수를 반환."""
     with _conn() as conn:
         cur = conn.execute(
-            "UPDATE jobs SET status = ?, error_msg = NULL, updated_at = ? WHERE status IN (?, ?, ?)",
+            "UPDATE jobs SET status = ?, error_msg = NULL, stage = NULL, progress = NULL, stage_detail = NULL,"
+            " updated_at = ? WHERE status IN (?, ?, ?)",
             (STATUS_PENDING, time.time(), STATUS_DOWNLOADING, STATUS_UPLOADING, STATUS_NOTIFYING),
         )
         conn.commit()
         return cur.rowcount
+
+
+def set_stage(job_id: int, stage: str | None, progress: float | None = None, detail: str | None = None):
+    update_job(job_id, stage=stage, progress=progress, stage_detail=detail)
+
+
+def request_resolution_choice(job_id: int, deadline: float) -> None:
+    update_job(job_id, status=STATUS_AWAITING_CHOICE, choice_deadline=deadline, **_CLEAR_STAGE)
+
+
+def choose_resolution(job_id: int, max_height: int) -> bool:
+    """선택 대기 중인 job에 해상도를 정하고 대기열로 보낸다. 이미 정해졌으면 False."""
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE jobs SET max_height = ?, status = ?, choice_deadline = NULL, updated_at = ?"
+            " WHERE id = ? AND status = ?",
+            (max_height, STATUS_PENDING, time.time(), job_id, STATUS_AWAITING_CHOICE),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def expire_resolution_choices(now: float, default_height: int) -> list[dict]:
+    """선택 마감이 지난 job을 기본 해상도로 대기열에 보내고, 보낸 job 목록을 반환."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM jobs WHERE status = ? AND choice_deadline < ?",
+            (STATUS_AWAITING_CHOICE, now),
+        ).fetchall()
+    return [dict(row) for row in rows if choose_resolution(row["id"], default_height)]
 
 
 def get_pending_jobs() -> list[dict]:
@@ -114,4 +163,5 @@ def reset_job_to_pending(job_id: int) -> None:
         file_path=None,
         gdrive_link=None,
         notion_url=None,
+        **_CLEAR_STAGE,
     )

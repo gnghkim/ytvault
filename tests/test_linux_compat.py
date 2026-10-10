@@ -107,6 +107,7 @@ class FailureCleanupTests(_TempDbTestCase):
         video = Path(self.directory) / "video [id].mp4"
         video.write_bytes(b"data")
         job_id = models.create_job("https://youtu.be/id", 1)
+        models.update_job(job_id, max_height=0)  # 해상도 확인 단계는 건너뛴다
         notices = []
 
         with patch.object(downloader, "_download", return_value=(str(video), "title", "", "")), \

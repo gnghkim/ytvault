@@ -20,32 +20,49 @@
     .stat-card .label { font-size: 0.75rem; color: #888; margin-top: 2px; }
     .stat-card.done .num { color: #4caf50; }
     .stat-card.downloading .num { color: #2196f3; }
+    .stat-card.choice .num { color: #ff7043; }
     .stat-card.pending .num { color: #ff9800; }
     .stat-card.failed .num { color: #f44336; }
     .stat-card.total .num { color: #7c6af7; }
 
-    table { width: 100%; border-collapse: collapse; background: #1a1a2e; border-radius: 10px; overflow: hidden; border: 1px solid #2a2a4a; }
-    thead th { background: #13132a; padding: 12px 14px; text-align: left; font-size: 0.8rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+    .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #2a2a4a; }
+    table { width: 100%; border-collapse: collapse; background: #1a1a2e; }
+    thead th { background: #13132a; padding: 12px 14px; text-align: left; font-size: 0.8rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
     tbody tr { border-top: 1px solid #2a2a4a; transition: background 0.15s; }
     tbody tr:hover { background: #20203a; }
+    tbody tr.active { background: #161630; }
     td { padding: 12px 14px; font-size: 0.88rem; vertical-align: middle; }
 
-    .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
-    .badge-pending   { background: #3a2e00; color: #ffc107; }
-    .badge-downloading { background: #002040; color: #42a5f5; }
-    .badge-uploading   { background: #1a0040; color: #ab47bc; }
-    .badge-notifying   { background: #002030; color: #26c6da; }
-    .badge-done        { background: #003320; color: #66bb6a; }
-    .badge-failed      { background: #3a0000; color: #ef5350; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+    .badge-pending         { background: #3a2e00; color: #ffc107; }
+    .badge-awaiting_choice { background: #3a1a00; color: #ff7043; }
+    .badge-downloading     { background: #002040; color: #42a5f5; }
+    .badge-uploading       { background: #1a0040; color: #ab47bc; }
+    .badge-notifying       { background: #002030; color: #26c6da; }
+    .badge-done            { background: #003320; color: #66bb6a; }
+    .badge-failed          { background: #3a0000; color: #ef5350; }
 
-    .url-cell { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aaa; font-size: 0.8rem; }
-    .title-cell { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .progress-cell { min-width: 230px; }
+    .stage { margin-top: 6px; font-size: 0.8rem; color: #ccc; }
+    .stage .step { color: #888; margin-right: 4px; }
+    .bar { height: 6px; background: #2a2a4a; border-radius: 3px; margin-top: 5px; overflow: hidden; }
+    .bar > div { height: 100%; background: linear-gradient(90deg, #7c6af7, #42a5f5); transition: width 0.6s; }
+    .bar.indeterminate > div { width: 30% !important; animation: slide 1.2s infinite ease-in-out; }
+    @keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+    .detail { margin-top: 4px; font-size: 0.75rem; color: #888; }
+    .choice-hint { margin-top: 6px; font-size: 0.78rem; color: #ffab91; }
+
+    .title-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .title-cell a { color: #e0e0e0; text-decoration: none; }
+    .title-cell a:hover { text-decoration: underline; }
+    .res-cell { white-space: nowrap; color: #bbb; font-size: 0.82rem; }
     .link-btn         { display: inline-block; padding: 4px 10px; background: #7c6af7; color: #fff; border-radius: 6px; text-decoration: none; font-size: 0.78rem; }
     .link-btn:hover   { background: #9580ff; }
     .link-btn.notion  { background: #2e2e2e; border: 1px solid #555; }
     .link-btn.notion:hover { background: #444; }
 
     .error-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ef5350; font-size: 0.78rem; }
+    .time-cell { white-space: nowrap; font-size: 0.8rem; color: #aaa; }
     .empty { text-align: center; padding: 48px; color: #555; }
 
     .refresh-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
@@ -63,91 +80,155 @@
   </header>
 
   <div class="container">
-    {% set total = jobs | length %}
-    {% set done = jobs | selectattr("status", "equalto", "done") | list | length %}
-    {% set pending = jobs | selectattr("status", "equalto", "pending") | list | length %}
-    {% set downloading = jobs | selectattr("status", "in", ["downloading", "uploading", "notifying"]) | list | length %}
-    {% set failed = jobs | selectattr("status", "equalto", "failed") | list | length %}
-
-    <div class="stats">
-      <div class="stat-card total"><div class="num">{{ total }}</div><div class="label">전체</div></div>
-      <div class="stat-card done"><div class="num">{{ done }}</div><div class="label">완료</div></div>
-      <div class="stat-card downloading"><div class="num">{{ downloading }}</div><div class="label">진행 중</div></div>
-      <div class="stat-card pending"><div class="num">{{ pending }}</div><div class="label">대기</div></div>
-      <div class="stat-card failed"><div class="num">{{ failed }}</div><div class="label">실패</div></div>
-    </div>
+    <div class="stats" id="stats"></div>
 
     <div class="refresh-bar">
       <span id="last-update">마지막 갱신: 방금</span>
       <button class="refresh-btn" onclick="loadJobs()">새로고침</button>
     </div>
 
-    <table>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>제목</th>
-          <th>URL</th>
-          <th>상태</th>
-          <th>Drive</th>
-          <th>Notion</th>
-          <th>오류</th>
-          <th>요청 시각</th>
-          <th>갱신 시각</th>
-        </tr>
-      </thead>
-      <tbody id="job-tbody">
-        {% if jobs %}
-          {% for job in jobs %}
+    <div class="table-wrap">
+      <table>
+        <thead>
           <tr>
-            <td>{{ job.id }}</td>
-            <td class="title-cell" title="{{ job.title or '' }}">{{ job.title or '-' }}</td>
-            <td class="url-cell"><a href="{{ job.url }}" target="_blank" style="color:#aaa">{{ job.url }}</a></td>
-            <td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td>
-            <td>{% if job.gdrive_link %}<a class="link-btn" href="{{ job.gdrive_link }}" target="_blank">Drive</a>{% else %}-{% endif %}</td>
-            <td>{% if job.notion_url %}<a class="link-btn notion" href="{{ job.notion_url }}" target="_blank">Notion</a>{% else %}-{% endif %}</td>
-            <td class="error-cell" title="{{ job.error_msg or '' }}">{{ job.error_msg or '' }}</td>
-            <td>{{ job.created_fmt }}</td>
-            <td>{{ job.updated_fmt }}</td>
+            <th>#</th>
+            <th>제목</th>
+            <th>진행 상태</th>
+            <th>해상도</th>
+            <th>Drive</th>
+            <th>Notion</th>
+            <th>오류</th>
+            <th>요청 시각</th>
+            <th>갱신 시각</th>
           </tr>
-          {% endfor %}
-        {% else %}
-          <tr><td colspan="9" class="empty">아직 작업이 없습니다. Telegram으로 YouTube 링크를 보내보세요.</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody id="job-tbody"></tbody>
+      </table>
+    </div>
   </div>
 
   <script>
-    async function loadJobs() {
-      const res = await fetch('/api/jobs');
-      const jobs = await res.json();
-      const tbody = document.getElementById('job-tbody');
+    // 진행 중인 작업의 세부 단계는 배지 아래 줄(STAGES)에 보여 준다
+    const STATUS_LABELS = {
+      pending: '대기', awaiting_choice: '해상도 선택', downloading: '진행 중',
+      uploading: '진행 중', notifying: '진행 중', done: '완료', failed: '실패',
+    };
+    // 작업 1건이 거치는 세부 단계 (worker/downloader.py 의 STAGE_*)
+    const STAGES = [
+      ['probing', '영상 정보 확인'],
+      ['downloading', '다운로드'],
+      ['merging', '영상·음성 병합'],
+      ['subtitles', '자막 받기'],
+      ['summarizing', 'AI 요약'],
+      ['uploading', 'Drive 업로드'],
+      ['notion', 'Notion 기록'],
+    ];
+    const ACTIVE = ['pending', 'awaiting_choice', 'downloading', 'uploading', 'notifying'];
+    const DEFAULT_RESOLUTION = '1080p';
 
-      if (!jobs.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="empty">아직 작업이 없습니다.</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = jobs.map(j => `
-        <tr>
-          <td>${j.id}</td>
-          <td class="title-cell" title="${j.title || ''}">${j.title || '-'}</td>
-          <td class="url-cell"><a href="${j.url}" target="_blank" style="color:#aaa">${j.url}</a></td>
-          <td><span class="badge badge-${j.status}">${j.status}</span></td>
-          <td>${j.gdrive_link ? `<a class="link-btn" href="${j.gdrive_link}" target="_blank">Drive</a>` : '-'}</td>
-          <td>${j.notion_url ? `<a class="link-btn notion" href="${j.notion_url}" target="_blank">Notion</a>` : '-'}</td>
-          <td class="error-cell" title="${j.error_msg || ''}">${j.error_msg || ''}</td>
-          <td>${j.created_fmt}</td>
-          <td>${j.updated_fmt}</td>
-        </tr>
-      `).join('');
-
-      document.getElementById('last-update').textContent = '마지막 갱신: ' + new Date().toLocaleTimeString('ko-KR');
+    function esc(value) {
+      return String(value ?? '').replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function safeUrl(url) {
+      return /^https?:\/\//i.test(url || '') ? esc(url) : '#';
+    }
+    function resolutionLabel(height) {
+      if (height === null || height === undefined) return '-';
+      if (height === 0) return '최고 화질';
+      return { 2160: '4K', 4320: '8K' }[height] || `${height}p`;
+    }
+    function minutesLeft(seconds) {
+      return seconds >= 60 ? `${Math.ceil(seconds / 60)}분 남음` : `${seconds}초 남음`;
     }
 
-    // 30초마다 자동 갱신
-    setInterval(loadJobs, 30000);
+    function renderProgress(j) {
+      let html = `<span class="badge badge-${esc(j.status)}">${esc(STATUS_LABELS[j.status] || j.status)}</span>`;
+      if (j.status === 'awaiting_choice') {
+        const left = j.choice_remaining != null ? ` · ${minutesLeft(j.choice_remaining)}` : '';
+        html += `<div class="choice-hint">텔레그램에서 해상도를 골라 주세요${left}<br>(고르지 않으면 ${DEFAULT_RESOLUTION})</div>`;
+        return html;
+      }
+      if (!j.stage) {
+        if (j.status === 'pending') html += '<div class="detail">순서를 기다리는 중</div>';
+        return html;
+      }
+      const index = STAGES.findIndex(([key]) => key === j.stage);
+      const label = index >= 0 ? STAGES[index][1] : j.stage;
+      const step = index >= 0 ? `<span class="step">${index + 1}/${STAGES.length}</span>` : '';
+      const hasPct = j.progress !== null && j.progress !== undefined;
+      html += `<div class="stage">${step}${esc(label)}${hasPct ? ` ${Math.floor(j.progress)}%` : ''}</div>`;
+      html += hasPct
+        ? `<div class="bar"><div style="width:${Math.min(100, Math.max(0, j.progress))}%"></div></div>`
+        : '<div class="bar indeterminate"><div></div></div>';
+      if (j.stage_detail) html += `<div class="detail">${esc(j.stage_detail)}</div>`;
+      return html;
+    }
+
+    function renderStats(jobs) {
+      const count = statuses => jobs.filter(j => statuses.includes(j.status)).length;
+      const cards = [
+        ['total', jobs.length, '전체'],
+        ['done', count(['done']), '완료'],
+        ['downloading', count(['downloading', 'uploading', 'notifying']), '진행 중'],
+        ['choice', count(['awaiting_choice']), '선택 대기'],
+        ['pending', count(['pending']), '대기'],
+        ['failed', count(['failed']), '실패'],
+      ];
+      document.getElementById('stats').innerHTML = cards.map(([cls, num, label]) =>
+        `<div class="stat-card ${cls}"><div class="num">${num}</div><div class="label">${label}</div></div>`).join('');
+    }
+
+    function render(jobs) {
+      renderStats(jobs);
+      const tbody = document.getElementById('job-tbody');
+      if (!jobs.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty">아직 작업이 없습니다. Telegram으로 YouTube 링크를 보내보세요.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = jobs.map(j => `
+        <tr class="${ACTIVE.includes(j.status) ? 'active' : ''}">
+          <td>${esc(j.id)}</td>
+          <td class="title-cell" title="${esc(j.title || j.url)}"><a href="${safeUrl(j.url)}" target="_blank" rel="noopener">${esc(j.title || j.url)}</a></td>
+          <td class="progress-cell">${renderProgress(j)}</td>
+          <td class="res-cell">${esc(resolutionLabel(j.max_height))}</td>
+          <td>${j.gdrive_link ? `<a class="link-btn" href="${safeUrl(j.gdrive_link)}" target="_blank" rel="noopener">Drive</a>` : '-'}</td>
+          <td>${j.notion_url ? `<a class="link-btn notion" href="${safeUrl(j.notion_url)}" target="_blank" rel="noopener">Notion</a>` : '-'}</td>
+          <td class="error-cell" title="${esc(j.error_msg)}">${esc(j.error_msg)}</td>
+          <td class="time-cell">${esc(j.created_fmt)}</td>
+          <td class="time-cell">${esc(j.updated_fmt)}</td>
+        </tr>
+      `).join('');
+    }
+
+    let timer = null;
+    function schedule(jobs) {
+      // 진행 중인 작업이 있으면 3초, 없으면 30초마다 갱신
+      const busy = jobs.some(j => ACTIVE.includes(j.status));
+      clearTimeout(timer);
+      timer = setTimeout(loadJobs, busy ? 3000 : 30000);
+      return busy;
+    }
+
+    async function loadJobs() {
+      try {
+        const res = await fetch('/api/jobs');
+        if (!res.ok) throw new Error(res.status);
+        const jobs = await res.json();
+        render(jobs);
+        const busy = schedule(jobs);
+        document.getElementById('last-update').textContent =
+          `마지막 갱신: ${new Date().toLocaleTimeString('ko-KR')} · ${busy ? '3초' : '30초'}마다 자동 갱신`;
+      } catch (e) {
+        document.getElementById('last-update').textContent = '갱신 실패 — 잠시 후 다시 시도합니다';
+        clearTimeout(timer);
+        timer = setTimeout(loadJobs, 10000);
+      }
+    }
+
+    const initialJobs = {{ jobs | tojson }};
+    render(initialJobs);
+    schedule(initialJobs);
   </script>
 </body>
 </html>

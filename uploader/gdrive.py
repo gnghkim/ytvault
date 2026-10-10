@@ -93,10 +93,14 @@ def _execute(request_factory, retries: int = 3, base_delay: float = 1.0):
     잡아준다 — WinError 10053도 여기 해당). 이게 실패하면 바깥 루프에서
     서비스 객체를 새로 만들어 통째로 재시도한다.
     """
+    return _with_retries(lambda: request_factory().execute(num_retries=5), retries, base_delay)
+
+
+def _with_retries(call, retries: int = 3, base_delay: float = 1.0):
     last_err = None
     for attempt in range(retries):
         try:
-            return request_factory().execute(num_retries=5)
+            return call()
         except Exception as e:
             last_err = e
             if attempt == retries - 1 or not _is_retryable(e):
@@ -146,24 +150,34 @@ def _sanitize_folder_name(name: str, max_len: int = 50) -> str:
     return sanitized[:max_len].strip()
 
 
-def _upload_single_file(service, file_path: str, filename: str, parent_id: str) -> str:
-    media = MediaFileUpload(file_path, resumable=True)
-    file = _execute(
-        lambda: service.files().create(
+def _upload_single_file(service, file_path: str, filename: str, parent_id: str, on_progress=None) -> str:
+    """resumable 업로드를 청크 단위로 보내며 on_progress(0.0~1.0)로 진행률을 알린다."""
+    def upload():
+        request = service.files().create(
             body={"name": filename, "parents": [parent_id]},
-            media_body=media,
+            media_body=MediaFileUpload(file_path, resumable=True),
             fields="id",
         )
-    )
+        response = None
+        while response is None:
+            status, response = request.next_chunk(num_retries=5)
+            if status and on_progress:
+                on_progress(status.progress())
+        return response
+
+    file = _with_retries(upload)
+    if on_progress:
+        on_progress(1.0)
     return file.get("id")
 
 
-def upload_video_package(file_path: str, title: str, md_content: str) -> str:
+def upload_video_package(file_path: str, title: str, md_content: str, on_progress=None) -> str:
     """영상 + info.md를 날짜_제목 폴더에 업로드하고 폴더 링크 반환.
 
     구조: YoutubeVault Archive / YYYY-MM / YYYYMMDD_제목 /
               ├── video.mp4
               └── info.md
+    on_progress(0.0~1.0)는 영상 업로드 진행률을 받는다.
     """
     import tempfile
 
@@ -181,7 +195,7 @@ def upload_video_package(file_path: str, title: str, md_content: str) -> str:
 
     # 영상 파일 업로드
     video_filename = os.path.basename(file_path)
-    video_id = _upload_single_file(service, file_path, video_filename, video_folder_id)
+    video_id = _upload_single_file(service, file_path, video_filename, video_folder_id, on_progress)
     logger.info(f"Uploaded video: {video_filename} ({video_id})")
 
     # info.md 업로드
