@@ -15,7 +15,12 @@
     .container { max-width: 1280px; margin: 0 auto; padding: 24px 16px; }
 
     .stats { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
-    .stat-card { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 8px; padding: 12px 20px; min-width: 110px; text-align: center; }
+    .stat-card { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 8px; padding: 12px 20px; min-width: 110px; text-align: center;
+                 font: inherit; color: inherit; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+    .stat-card:hover { background: #22223e; border-color: #3a3a6a; }
+    .stat-card:focus-visible { outline: 2px solid #7c6af7; outline-offset: 2px; }
+    .stat-card.selected { border-color: #7c6af7; background: #25204a; box-shadow: 0 0 0 1px #7c6af7 inset; }
+    .stat-card.selected .label { color: #c9bfff; }
     .stat-card .num { font-size: 1.8rem; font-weight: 700; }
     .stat-card .label { font-size: 0.75rem; color: #888; margin-top: 2px; }
     .stat-card.done .num { color: #4caf50; }
@@ -224,18 +229,26 @@
       return html + esc(text.slice(from));
     }
 
-    function renderStats(counts) {
-      const sum = statuses => statuses.reduce((n, s) => n + (counts[s] || 0), 0);
-      const cards = [
-        ['total', Object.values(counts).reduce((a, b) => a + b, 0), '전체'],
-        ['done', sum(['done']), '완료'],
-        ['downloading', sum(['downloading', 'uploading', 'notifying']), '진행 중'],
-        ['choice', sum(['awaiting_choice']), '선택 대기'],
-        ['pending', sum(['pending']), '대기'],
-        ['failed', sum(['failed']), '실패'],
-      ];
-      document.getElementById('stats').innerHTML = cards.map(([cls, num, label]) =>
-        `<div class="stat-card ${cls}"><div class="num">${num}</div><div class="label">${label}</div></div>`).join('');
+    // 통계 카드: [스타일, 필터 값(?status=, web/app.py STATUS_FILTERS), 포함 상태, 이름]
+    const CARDS = [
+      ['total', '', null, '전체'],
+      ['done', 'done', ['done'], '완료'],
+      ['downloading', 'active', ['downloading', 'uploading', 'notifying'], '진행 중'],
+      ['choice', 'awaiting_choice', ['awaiting_choice'], '선택 대기'],
+      ['pending', 'pending', ['pending'], '대기'],
+      ['failed', 'failed', ['failed'], '실패'],
+    ];
+    const FILTER_LABELS = Object.fromEntries(CARDS.filter(c => c[1]).map(c => [c[1], c[3]]));
+
+    function renderStats(counts, filter) {
+      const all = Object.values(counts).reduce((a, b) => a + b, 0);
+      document.getElementById('stats').innerHTML = CARDS.map(([cls, key, statuses, label]) => {
+        const num = statuses ? statuses.reduce((n, s) => n + (counts[s] || 0), 0) : all;
+        const selected = key === filter;
+        return `<button type="button" class="stat-card ${cls}${selected ? ' selected' : ''}" data-filter="${key}"
+                  aria-pressed="${selected}" title="${key ? `${label}만 보기` : '전체 보기'}">
+                  <div class="num">${num}</div><div class="label">${label}</div></button>`;
+      }).join('');
     }
 
     function pageNumbers(page, pages) {
@@ -265,19 +278,22 @@
     }
 
     function render(data) {
-      renderStats(data.counts);
+      renderStats(data.counts, data.status);
       renderPagination(data);
       const from = data.total ? (data.page - 1) * data.size + 1 : 0;
       const to = Math.min(data.page * data.size, data.total);
+      const filterLabel = FILTER_LABELS[data.status];
+      let info = data.query ? `"${data.query}" 검색 결과` : '';
+      if (filterLabel) info = info ? `${info} 중 ${filterLabel}` : filterLabel;
       document.getElementById('result-info').textContent =
-        (data.query ? `"${data.query}" 검색 결과 ${data.total}건` : `전체 ${data.total}건`) +
-        (data.total ? ` · ${from}–${to}` : '');
+        `${info || '전체'} ${data.total}건` + (data.total ? ` · ${from}–${to}` : '');
 
       const tbody = document.getElementById('job-tbody');
       if (!data.items.length) {
-        tbody.innerHTML = data.query
-          ? '<tr><td colspan="9" class="empty">검색 결과가 없습니다.</td></tr>'
-          : '<tr><td colspan="9" class="empty">아직 작업이 없습니다. Telegram으로 YouTube 링크를 보내보세요.</td></tr>';
+        const message = data.query ? '검색 결과가 없습니다.'
+          : filterLabel ? `${filterLabel} 상태인 작업이 없습니다.`
+          : '아직 작업이 없습니다. Telegram으로 YouTube 링크를 보내보세요.';
+        tbody.innerHTML = `<tr><td colspan="9" class="empty">${message}</td></tr>`;
         return;
       }
       tbody.innerHTML = data.items.map(j => `
@@ -295,8 +311,8 @@
       `).join('');
     }
 
-    // 현재 보고 있는 페이지와 검색어. 주소창(?page=&q=)에도 남겨 새로고침해도 유지된다
-    const state = { page: 1, q: '' };
+    // 현재 보고 있는 페이지, 검색어, 상태 필터. 주소창(?page=&q=&status=)에도 남겨 새로고침해도 유지된다
+    const state = { page: 1, q: '', filter: '' };
     let timer = null;
     let requestSeq = 0;
 
@@ -312,12 +328,14 @@
       const params = new URLSearchParams();
       if (state.page > 1) params.set('page', state.page);
       if (state.q) params.set('q', state.q);
+      if (state.filter) params.set('status', state.filter);
       const query = params.toString();
       history.replaceState(null, '', query ? `?${query}` : location.pathname);
     }
 
     function apply(data) {
       state.page = data.page;  // 서버가 범위를 벗어난 페이지 번호를 맞춰 준 값
+      state.filter = data.status || '';  // 알 수 없는 필터는 서버가 ''(전체)로 돌려준다
       render(data);
       syncUrl();
       return schedule(data.counts);
@@ -326,7 +344,7 @@
     async function loadJobs() {
       const seq = ++requestSeq;
       try {
-        const params = new URLSearchParams({ page: state.page, q: state.q });
+        const params = new URLSearchParams({ page: state.page, q: state.q, status: state.filter });
         const res = await fetch(`/api/jobs?${params}`);
         if (!res.ok) throw new Error(res.status);
         const data = await res.json();
@@ -359,6 +377,15 @@
       clearTimeout(debounce);
       debounce = setTimeout(() => search(searchInput.value), 400);
     });
+    document.getElementById('stats').addEventListener('click', e => {
+      // 카드를 누르면 그 상태만, 이미 선택된 카드나 '전체'를 누르면 필터를 푼다. 검색어는 유지
+      const card = e.target.closest('[data-filter]');
+      if (!card) return;
+      const key = card.dataset.filter;
+      state.filter = key === state.filter ? '' : key;
+      state.page = 1;
+      loadJobs();
+    });
     document.getElementById('job-tbody').addEventListener('click', async e => {
       const target = e.target.closest('button[data-retry]');
       if (!target || target.disabled) return;
@@ -385,6 +412,7 @@
 
     const initial = {{ initial | tojson }};
     state.q = initial.query;
+    state.filter = initial.status || '';
     searchInput.value = initial.query;
     apply(initial);
   </script>

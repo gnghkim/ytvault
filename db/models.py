@@ -130,31 +130,38 @@ def get_pending_jobs() -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def _search_clause(query: str) -> tuple[str, list]:
-    """제목/URL 부분 일치 검색. "67" 이나 "#67" 처럼 숫자면 작업 번호도 찾는다."""
+def _search_clause(query: str, statuses: list[str] | None = None) -> tuple[str, list]:
+    """제목/URL 부분 일치 검색. "67" 이나 "#67" 처럼 숫자면 작업 번호도 찾는다.
+
+    statuses를 주면 그 상태인 작업만 남긴다(검색어와 AND).
+    """
+    conditions, params = [], []
     query = query.strip()
-    if not query:
-        return "", []
-    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    like = f"%{escaped}%"
-    clause = "title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\'"
-    params: list = [like, like]
-    number = query.removeprefix("#")
-    if number.isdigit():
-        clause += " OR id = ?"
-        params.append(int(number))
-    return f"WHERE ({clause})", params
+    if query:
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{escaped}%"
+        clause = "title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\'"
+        params += [like, like]
+        number = query.removeprefix("#")
+        if number.isdigit():
+            clause += " OR id = ?"
+            params.append(int(number))
+        conditions.append(f"({clause})")
+    if statuses:
+        conditions.append(f"status IN ({', '.join('?' * len(statuses))})")
+        params += list(statuses)
+    return (f"WHERE {' AND '.join(conditions)}" if conditions else ""), params
 
 
-def count_jobs(query: str = "") -> int:
-    where, params = _search_clause(query)
+def count_jobs(query: str = "", statuses: list[str] | None = None) -> int:
+    where, params = _search_clause(query, statuses)
     with _conn() as conn:
         return conn.execute(f"SELECT COUNT(*) FROM jobs {where}", params).fetchone()[0]
 
 
-def search_jobs(query: str = "", limit: int = 20, offset: int = 0) -> list[dict]:
+def search_jobs(query: str = "", limit: int = 20, offset: int = 0, statuses: list[str] | None = None) -> list[dict]:
     """최근 요청 순으로 검색 결과의 한 페이지를 반환."""
-    where, params = _search_clause(query)
+    where, params = _search_clause(query, statuses)
     with _conn() as conn:
         rows = conn.execute(
             f"SELECT * FROM jobs {where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
