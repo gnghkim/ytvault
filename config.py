@@ -23,5 +23,9 @@ DB_PATH = os.getenv("DB_PATH", "./ytvault.db")
 
 WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
 WEB_PORT = int(os.getenv("WEB_PORT", "8000"))
+# HTTP Basic credentials for the web UI. With no password the UI refuses every
+# request instead of serving the job list to anyone on the network.
+WEB_USERNAME = os.getenv("WEB_USERNAME", "ytvault")
+WEB_PASSWORD = os.getenv("WEB_PASSWORD", "")
 
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)

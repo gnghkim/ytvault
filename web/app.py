@@ -1,12 +1,21 @@
 import time
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from db.models import get_all_jobs, get_job
 from log_redaction import redact_secrets
+from web.auth import require_auth
 
-app = FastAPI(title="YTVault")
+# Every route requires credentials. The auto-generated docs are turned off
+# because FastAPI serves them outside app-level dependencies.
+app = FastAPI(
+    title="YTVault",
+    dependencies=[Depends(require_auth)],
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 templates = Jinja2Templates(directory="web/templates")
 
 

@@ -6,7 +6,7 @@ from db.models import init_db
 from worker.downloader import run_worker
 from bot.telegram_bot import run_bot, send_message_sync
 from web.app import app as web_app
-from config import WEB_HOST, WEB_PORT
+from config import WEB_HOST, WEB_PASSWORD, WEB_PORT
 
 configure_safe_logging()
 logger = logging.getLogger(__name__)
@@ -27,6 +27,8 @@ if __name__ == "__main__":
     web_thread = threading.Thread(target=start_web, daemon=True, name="web")
     web_thread.start()
     logger.info(f"Web UI: http://{WEB_HOST}:{WEB_PORT}")
+    if not WEB_PASSWORD:
+        logger.warning("WEB_PASSWORD is not set: the web UI answers 503 to every request.")
 
     worker_thread = threading.Thread(target=start_worker, daemon=True, name="worker")
     worker_thread.start()
