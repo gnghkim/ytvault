@@ -164,6 +164,7 @@ ping 값에는 웹 대시보드 응답 시간(ms)을 보낸다.
 YTVAULT_KUMA_PUSH_URL=http://127.0.0.1:3001/api/push/<토큰>?status=up&msg=OK&ping=
 ```
 
+- **호스트는 `http://127.0.0.1:3001`로 쓴다.** Kuma 설정의 기본 URL(Primary Base URL)을 Tailscale 주소 등으로 정해 두었으면 Push URL도 그 주소로 나오는데, 헬스체커 서비스는 localhost로만 연결할 수 있어 시간 초과로 실패한다. `/api/push/` 뒤의 토큰은 그대로 두고 앞부분만 바꾼다.
 - 뒤의 `?status=...` 부분은 있어도 없어도 된다. 헬스체커가 매번 새로 붙인다.
 - **토큰은 비밀번호와 같다.** 누구든 이 URL로 가짜 상태를 보낼 수 있으므로 `.env`에만 두고 소스코드·문서·채팅에 붙이지 않는다. 헬스체커도 로그에는 호스트만 남긴다.
 - `.env`는 권한 600으로 둔다.
@@ -245,6 +246,7 @@ systemctl list-timers ytvault-healthcheck.timer
 | `healthcheck error: …` | 헬스체커 자체 오류. `healthcheck.py --no-push --json`으로 확인 |
 | Kuma에 아무 신호도 없음 (down) | 타이머 확인(`systemctl list-timers`), `journalctl -u ytvault-healthcheck`에서 `Push failed: …` 확인. `.env`의 URL, Kuma 컨테이너 상태(`docker ps`) 확인 |
 | `Push failed: Uptime Kuma rejected the push: Monitor not found or not active.` | Push URL 토큰이 틀렸거나 모니터가 일시정지됨 |
+| `Push failed: <호스트> unreachable: timed out` (손으로 실행하면 성공) | Push URL이 localhost가 아닌 주소(Tailscale 이름 등). 서비스는 localhost만 허용하므로 `.env`에서 호스트를 `http://127.0.0.1:3001`로 바꾼다 |
 
 전송이 실패해도 헬스체커는 다시 시도하지 않고 끝난다(1분 뒤 다음 실행). ytvault 본체에는 영향이 없다.
 
