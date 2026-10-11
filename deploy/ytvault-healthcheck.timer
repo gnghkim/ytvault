@@ -1,0 +1,15 @@
+# Runs ytvault-healthcheck.service every 60 seconds. The Uptime Kuma push
+# monitor marks ytvault down when no push arrives within its heartbeat interval
+# (180 s), which also covers this timer or the checker not running at all.
+
+[Unit]
+Description=Run the ytvault health check every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=ytvault-healthcheck.service
+
+[Install]
+WantedBy=timers.target

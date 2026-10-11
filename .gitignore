@@ -15,4 +15,6 @@ token.pickle
 # runtime data
 downloads/
 ytvault.db
+health_state.json
+.health_state.*.tmp
 tools/

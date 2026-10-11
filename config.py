@@ -28,6 +28,8 @@ NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID", "")
 
 DOWNLOAD_DIR = project_path(os.getenv("DOWNLOAD_DIR", "downloads"))
 DB_PATH = project_path(os.getenv("DB_PATH", "ytvault.db"))
+# 워커·봇이 살아 있다는 기록. ytvault가 쓰고 healthcheck.py가 읽는다
+HEALTH_STATE_PATH = project_path(os.getenv("HEALTH_STATE_PATH", "health_state.json"))
 
 WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
 WEB_PORT = int(os.getenv("WEB_PORT", "8000"))

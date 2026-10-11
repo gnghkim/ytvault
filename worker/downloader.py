@@ -6,6 +6,7 @@ import logging
 import threading
 from datetime import datetime
 import yt_dlp
+import health_state
 from log_redaction import redact_secrets
 from db.models import (
     expire_resolution_choices,
@@ -489,11 +490,22 @@ def run_worker(notify_callback=None, poll_interval: int = 5):
     _active = True
     logger.info("Worker started.")
     while _active:
-        with _lock:
-            _expire_resolution_choices(notify_callback)
-            jobs = get_pending_jobs()
-        for job in jobs:
-            _process_job(job, notify_callback)
+        # 대기열 확인에서 난 예외(DB 잠김 등)로 워커 스레드가 조용히 죽지 않게 한다.
+        # 연속 오류 횟수는 헬스체커가 본다.
+        try:
+            with _lock:
+                _expire_resolution_choices(notify_callback)
+                jobs = get_pending_jobs()
+            health_state.worker_tick()
+            for job in jobs:
+                health_state.worker_job_started(job["id"])
+                try:
+                    _process_job(job, notify_callback)
+                finally:
+                    health_state.worker_job_finished()
+        except Exception as e:
+            logger.error(f"Worker loop error: {redact_secrets(e)}")
+            health_state.worker_loop_error(e)
         time.sleep(poll_interval)
 
 

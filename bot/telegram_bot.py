@@ -10,6 +10,8 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
+import health_state
 from db.models import (
     choose_resolution,
     create_job,
@@ -143,9 +145,41 @@ def send_message_sync(chat_id: int, text: str, buttons: list[tuple[str, str]] | 
     )
 
 
+# getUpdates 응답 코드 → 헬스체크에 남길 오류 종류
+_POLL_ERROR_KINDS = {401: "auth", 404: "auth", 409: "conflict", 429: "rate_limit"}
+
+
+class _PollTrackingRequest(HTTPXRequest):
+    """getUpdates(롱 폴링) 결과를 헬스체크 상태 파일에 남긴다.
+
+    새 메시지가 없어도 텔레그램은 몇 초마다 빈 응답을 돌려주므로, 성공 시각이 계속 갱신되면
+    폴링이 정상이다. 시간 초과(TimedOut)는 python-telegram-bot이 오류 처리기로 넘기지 않아
+    여기서 직접 잡는다.
+    """
+
+    async def do_request(self, *args, **kwargs):
+        try:
+            code, payload = await super().do_request(*args, **kwargs)
+        except Exception as e:
+            health_state.bot_poll_error("network", e)
+            raise
+        if 200 <= code < 300:
+            health_state.bot_poll_ok()
+        else:
+            kind = _POLL_ERROR_KINDS.get(code, "server" if code >= 500 else "http")
+            health_state.bot_poll_error(kind, f"HTTP {code}")
+        return code, payload
+
+
 def run_bot():
     global _application, _loop
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    app = (
+        ApplicationBuilder()
+        .token(TELEGRAM_BOT_TOKEN)
+        # ApplicationBuilder 기본값과 같은 설정(getUpdates 전용 연결 1개)에 기록만 더한다
+        .get_updates_request(_PollTrackingRequest(connection_pool_size=1))
+        .build()
+    )
     _application = app
 
     app.add_handler(CommandHandler("start", _handle_start))

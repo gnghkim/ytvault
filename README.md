@@ -144,6 +144,16 @@ python3 -m venv .venv
 | 최근 경고·오류 | `journalctl -u ytvault -p warning --since today` |
 | 재시작 / 중지 | `sudo systemctl restart ytvault` / `sudo systemctl stop ytvault` |
 
+### 헬스 모니터링 (Uptime Kuma)
+
+`ytvault-healthcheck.timer`가 1분마다 봇 폴링, 워커, 작업 큐, Drive 인증 오류, 디스크, 웹 응답을 판정해 Uptime Kuma Push 모니터로 보냅니다.
+판정 기준, 설치, 문제 해결은 [docs/HEALTH_MONITORING.md](./docs/HEALTH_MONITORING.md)를 참고하세요.
+
+| 할 일 | 명령 |
+|---|---|
+| 지금 상태 보기 | `.venv/bin/python healthcheck.py --no-push` |
+| 최근 판정 기록 | `journalctl -u ytvault-healthcheck -n 20 --no-pager` |
+
 재시작을 비밀번호 없이 하려면 `sudo visudo -f /etc/sudoers.d/ytvault`로 아래 한 줄을 추가합니다. 이 서비스 재시작만 허용됩니다.
 
 ```
@@ -164,6 +174,7 @@ python3 -m venv .venv
 | `DB_PATH` | SQLite DB 경로 (기본값 `./ytvault.db`) | - |
 | `WEB_HOST` / `WEB_PORT` | 웹 대시보드 바인딩 주소/포트 | - |
 | `WEB_USERNAME` / `WEB_PASSWORD` | 웹 대시보드 로그인 (사용자 이름 기본값 `ytvault`). 비밀번호가 비어 있으면 웹 UI가 닫힘 | ✅ |
+| `YTVAULT_KUMA_PUSH_URL` | 헬스체커가 결과를 보낼 Uptime Kuma Push URL. 판정 기준(`HEALTH_*`)은 [docs/HEALTH_MONITORING.md](./docs/HEALTH_MONITORING.md) | - |
 
 Google Drive 접근에는 `client_secret.json`(OAuth 클라이언트)이 별도로 필요합니다. 자세한 발급 방법은 SETUP.md 참고.
 
@@ -178,6 +189,9 @@ uploader/            # Google Drive 업로드
 notifier/            # Notion 기록
 db/                  # SQLite job 상태 관리
 web/                 # 작업 현황 대시보드 (FastAPI)
+health_state.py      # 워커·봇 활동을 health_state.json에 기록
+healthcheck.py       # 헬스체커 (별도 프로세스, Uptime Kuma로 전송)
+deploy/              # 헬스체커 systemd 서비스·타이머
 ```
 
 ## 주의사항

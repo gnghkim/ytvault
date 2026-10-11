@@ -1,6 +1,7 @@
 import logging
 import threading
 import uvicorn
+import health_state
 from log_redaction import configure_safe_logging
 from db.models import init_db, requeue_interrupted_jobs
 from worker.downloader import run_worker
@@ -25,6 +26,7 @@ if __name__ == "__main__":
     logger.info("DB initialized.")
     if requeued := requeue_interrupted_jobs():
         logger.info(f"Requeued {requeued} job(s) interrupted by the last shutdown.")
+    health_state.flush()  # 이전 실행의 상태 파일을 새 프로세스 정보로 바꿔 둔다
 
     web_thread = threading.Thread(target=start_web, daemon=True, name="web")
     web_thread.start()
